@@ -1,0 +1,125 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+    middleware.rongxzy.io/version: v1
+  generation: 1
+  labels:
+    middleware.rongxzy.io/app: qwen-32b-instruct
+    middleware.rongxzy.io/modelName: qwen-32b-instruct
+  name: qwen-32b-instruct
+  namespace: default
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      middleware.rongxzy.io/app: qwen-32b-instruct
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        middleware.rongxzy.io/version: v1
+      labels:
+        middleware.rongxzy.io/app: qwen-32b-instruct
+        middleware.rongxzy.io/modelName: qwen-32b-instruct
+    spec:
+      containers:
+      - args:
+        - serve
+        - --host
+        - 0.0.0.0
+        - --port
+        - "8000"
+        - /models/DeepSeek-R1-Distill-Qwen-1.5B
+        - --raid_level
+        - raid1
+        - --zmq_server
+        - 172.18.2.78
+        - --log_level
+        - debug
+        - --trust_remote_code
+        - --tp_size
+        - "1"
+        - --pp_size
+        - "1"
+        command:
+        - /usr/local/lib/python3.12/dist-packages/huaan/cli/huaan-serve
+        env:
+        - name: LD_LIBRARY_PATH
+          value: /usr/local/cuda-12.9/compat:/usr/local/tensorrt/targets/x86_64-linux-gnu/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64
+        - name: PATH
+          value: /usr/local/cmake/bin:/usr/local/lib/python3.12/dist-packages/torch_tensorrt/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/mpi/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/ucx/bin:/opt/amazon/efa/bin:/opt/tensorrt/bin
+        image: 172.18.5.249:8081/huaan/huaan:0.2.2-test-3
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /v1/models
+            port: 8000
+            scheme: HTTP
+          initialDelaySeconds: 120
+          periodSeconds: 60
+          successThreshold: 1
+          timeoutSeconds: 15
+        name: inference
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /v1/models
+            port: 8000
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: "8"
+            memory: 32Gi
+            rx.com/gpu: "2"
+          requests:
+            cpu: "8"
+            memory: 32Gi
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /v1/models
+            port: 8000
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 15
+          successThreshold: 1
+          timeoutSeconds: 10
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /models
+          name: storage-0
+        - mountPath: /dev/shm
+          name: storage-1
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+      volumes:
+      - hostPath:
+          path: /mnt/models/
+          type: DirectoryOrCreate
+        name: storage-0
+      - emptyDir:
+          medium: Memory
+          sizeLimit: 10Gi
+        name: storage-1
