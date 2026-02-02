@@ -49,6 +49,11 @@ const (
 	DeviceIDStrategyIndex = "index"
 )
 
+// Constants related to topology-aware allocation
+const (
+	DefaultAllocationHintAnnotation = "xinchao.com/gpu-allocation-hint"
+)
+
 // Constants related to generating CDI specifications
 const (
 	DefaultCDIAnnotationPrefix = cdiapi.AnnotationPrefix

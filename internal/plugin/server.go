@@ -38,6 +38,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	v1 "k8s.io/api/core/v1"
+	coreclientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	pluginapi "k8s.io/kubelet/pkg/apis/deviceplugin/v1beta1"
 )
@@ -67,6 +69,12 @@ type nvidiaDevicePlugin struct {
 	imexChannels imex.Channels
 
 	mps mpsOptions
+
+	kubeClient               coreclientset.Interface
+	nodeName                 string
+	topologyAwareAlloc       bool
+	allocationHintAnnotation string
+	podLister                func(context.Context) ([]v1.Pod, error)
 }
 
 // devicePluginForResource creates a device plugin for the specified resource.
@@ -88,6 +96,11 @@ func (o *options) devicePluginForResource(ctx context.Context, resourceManager r
 		imexChannels: o.imexChannels,
 
 		mps: mpsOptions,
+
+		kubeClient:               o.kubeClient,
+		nodeName:                 o.nodeName,
+		topologyAwareAlloc:       o.topologyAwareAlloc,
+		allocationHintAnnotation: o.allocationHintAnnotation,
 
 		socket: getPluginSocketPath(resourceManager.Resource()),
 		// These will be reinitialized every
@@ -305,13 +318,46 @@ func (plugin *nvidiaDevicePlugin) GetPreferredAllocation(ctx context.Context, r 
 // Allocate returns a list of devices.
 func (plugin *nvidiaDevicePlugin) Allocate(ctx context.Context, reqs *pluginapi.AllocateRequest) (*pluginapi.AllocateResponse, error) {
 	responses := pluginapi.AllocateResponse{}
+	var podItems []v1.Pod
+	var podListErr error
+	useTopologyAllocation := plugin.useTopologyAllocation()
+	klog.V(2).Infof("Allocate: resource=%q containers=%d topologyAware=%t", plugin.rm.Resource(), len(reqs.ContainerRequests), useTopologyAllocation)
+	if useTopologyAllocation {
+		podItems, podListErr = plugin.listNodePods(ctx)
+		if podListErr != nil {
+			klog.Warningf("topology-aware-alloc enabled but failed to list pods: %v; falling back to default allocation", podListErr)
+		}
+	} else {
+		klog.V(4).Info("topology-aware-alloc disabled or unavailable; using default allocation")
+	}
 	for _, req := range reqs.ContainerRequests {
 		if err := plugin.rm.ValidateRequest(req.DevicesIds); err != nil {
 			return nil, fmt.Errorf("invalid allocation request for %q: %w", plugin.rm.Resource(), err)
 		}
-		response, err := plugin.getAllocateResponse(req.DevicesIds)
+		klog.V(4).Infof("Allocate: requested device IDs=%v", req.DevicesIds)
+		requestIDs := req.DevicesIds
+		deviceIDs := plugin.uniqueDeviceIDsFromAnnotatedDeviceIDs(requestIDs)
+		switchID := ""
+		if useTopologyAllocation && podListErr == nil {
+			hint, ok := plugin.findAllocationHint(podItems, len(requestIDs))
+			if ok {
+				requestIDs = hint.DeviceIDs
+				deviceIDs = plugin.uniqueDeviceIDsFromAnnotatedDeviceIDs(requestIDs)
+				switchID = hint.SwitchID
+				klog.V(2).Infof("Allocate: applying hint devices=%v switch=%q", requestIDs, switchID)
+			} else {
+				klog.V(4).Info("Allocate: no valid hint found; using default allocation")
+			}
+		}
+		response, err := plugin.getAllocateResponse(deviceIDs, requestIDs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get allocate response: %v", err)
+		}
+		if switchID != "" {
+			if response.Envs == nil {
+				response.Envs = make(map[string]string)
+			}
+			response.Envs[switchIDEnvVar] = switchID
 		}
 		responses.ContainerResponses = append(responses.ContainerResponses, response)
 	}
@@ -319,9 +365,7 @@ func (plugin *nvidiaDevicePlugin) Allocate(ctx context.Context, reqs *pluginapi.
 	return &responses, nil
 }
 
-func (plugin *nvidiaDevicePlugin) getAllocateResponse(requestIds []string) (*pluginapi.ContainerAllocateResponse, error) {
-	deviceIDs := plugin.uniqueDeviceIDsFromAnnotatedDeviceIDs(requestIds)
-
+func (plugin *nvidiaDevicePlugin) getAllocateResponse(deviceIDs []string, requestIds []string) (*pluginapi.ContainerAllocateResponse, error) {
 	// Create an empty response that will be updated as required below.
 	response := &pluginapi.ContainerAllocateResponse{
 		Envs: make(map[string]string),

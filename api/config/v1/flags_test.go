@@ -133,6 +133,22 @@ func TestUnmarshalFlags(t *testing.T) {
 				},
 			},
 		},
+		{
+			input: `{
+				"plugin": {
+					"topologyAwareAlloc": true,
+					"allocationHintAnnotation": "xinchao.com/gpu-allocation-hint"
+				}
+			}`,
+			output: Flags{
+				CommandLineFlags{
+					Plugin: &PluginCommandLineFlags{
+						TopologyAwareAlloc:       ptr(true),
+						AllocationHintAnnotation: ptr("xinchao.com/gpu-allocation-hint"),
+					},
+				},
+			},
+		},
 	}
 
 	for i, tc := range testCases {
@@ -214,6 +230,35 @@ func TestMarshalFlags(t *testing.T) {
 					"outputFile": null,
 					"sleepInterval": "5ns",
 					"machineTypeFile": null
+				}
+			}`,
+		},
+		{
+			input: Flags{
+				CommandLineFlags{
+					Plugin: &PluginCommandLineFlags{
+						TopologyAwareAlloc:       ptr(true),
+						AllocationHintAnnotation: ptr("xinchao.com/gpu-allocation-hint"),
+					},
+				},
+			},
+			output: `{
+				"migStrategy": null,
+				"failOnInitError": null,
+				"gdrcopyEnabled": null,
+				"gdsEnabled": null,
+				"mofedEnabled": null,
+				"useNodeFeatureAPI": null,
+				"deviceDiscoveryStrategy": null,
+				"plugin": {
+					"passDeviceSpecs": null,
+					"deviceListStrategy": null,
+					"deviceIDStrategy": null,
+					"cdiAnnotationPrefix": null,
+					"nvidiaCTKPath": null,
+					"containerDriverRoot": null,
+					"topologyAwareAlloc": true,
+					"allocationHintAnnotation": "xinchao.com/gpu-allocation-hint"
 				}
 			}`,
 		},

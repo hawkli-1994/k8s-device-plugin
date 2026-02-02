@@ -19,6 +19,7 @@ package plugin
 import (
 	"github.com/NVIDIA/go-nvlib/pkg/nvlib/info"
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
+	coreclientset "k8s.io/client-go/kubernetes"
 
 	spec "github.com/NVIDIA/k8s-device-plugin/api/config/v1"
 	"github.com/NVIDIA/k8s-device-plugin/internal/cdi"
@@ -74,5 +75,33 @@ func WithConfig(config *spec.Config) Option {
 func WithImexChannels(imexChannels imex.Channels) Option {
 	return func(m *options) {
 		m.imexChannels = imexChannels
+	}
+}
+
+// WithKubeClient sets the Kubernetes client used to query pods.
+func WithKubeClient(client coreclientset.Interface) Option {
+	return func(m *options) {
+		m.kubeClient = client
+	}
+}
+
+// WithNodeName sets the node name for topology-aware allocation.
+func WithNodeName(nodeName string) Option {
+	return func(m *options) {
+		m.nodeName = nodeName
+	}
+}
+
+// WithTopologyAwareAlloc enables topology-aware allocation.
+func WithTopologyAwareAlloc(enabled bool) Option {
+	return func(m *options) {
+		m.topologyAwareAlloc = enabled
+	}
+}
+
+// WithAllocationHintAnnotation sets the annotation key used to read allocation hints.
+func WithAllocationHintAnnotation(annotation string) Option {
+	return func(m *options) {
+		m.allocationHintAnnotation = annotation
 	}
 }

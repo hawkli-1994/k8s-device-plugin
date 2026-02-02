@@ -30,10 +30,12 @@ import (
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
 	"github.com/fsnotify/fsnotify"
 	"github.com/urfave/cli/v2"
+	coreclientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	pluginapi "k8s.io/kubelet/pkg/apis/deviceplugin/v1beta1"
 
 	spec "github.com/NVIDIA/k8s-device-plugin/api/config/v1"
+	"github.com/NVIDIA/k8s-device-plugin/internal/flags"
 	"github.com/NVIDIA/k8s-device-plugin/internal/info"
 	"github.com/NVIDIA/k8s-device-plugin/internal/plugin"
 	"github.com/NVIDIA/k8s-device-plugin/internal/rm"
@@ -41,9 +43,10 @@ import (
 )
 
 type options struct {
-	flags         []cli.Flag
-	configFile    string
-	kubeletSocket string
+	flags            []cli.Flag
+	configFile       string
+	kubeletSocket    string
+	kubeClientConfig flags.KubeClientConfig
 }
 
 func main() {
@@ -105,6 +108,18 @@ func main() {
 			Value:   spec.DeviceIDStrategyUUID,
 			Usage:   "the desired strategy for passing device IDs to the underlying runtime:\n\t\t[uuid | index]",
 			EnvVars: []string{"DEVICE_ID_STRATEGY"},
+		},
+		&cli.BoolFlag{
+			Name:    "topology-aware-alloc",
+			Value:   false,
+			Usage:   "enable topology-aware GPU allocation based on pod annotations",
+			EnvVars: []string{"TOPOLOGY_AWARE_ALLOC"},
+		},
+		&cli.StringFlag{
+			Name:    "allocation-hint-annotation",
+			Value:   spec.DefaultAllocationHintAnnotation,
+			Usage:   "the pod annotation key that contains the GPU allocation hint",
+			EnvVars: []string{"ALLOCATION_HINT_ANNOTATION"},
 		},
 		&cli.BoolFlag{
 			Name:    "gdrcopy-enabled",
@@ -181,6 +196,7 @@ func main() {
 			EnvVars: []string{"CDI_FEATURE_FLAGS"},
 		},
 	}
+	c.Flags = append(c.Flags, o.kubeClientConfig.Flags()...)
 	o.flags = c.Flags
 
 	err := c.Run(os.Args)
@@ -379,9 +395,41 @@ func startPlugins(c *cli.Context, o *options) ([]plugin.Interface, bool, error) 
 	}
 	klog.Infof("\nRunning with config:\n%v", string(configJSON))
 
+	topologyAwareAlloc := false
+	allocationHintAnnotation := spec.DefaultAllocationHintAnnotation
+	if config.Flags.Plugin != nil {
+		if config.Flags.Plugin.TopologyAwareAlloc != nil {
+			topologyAwareAlloc = *config.Flags.Plugin.TopologyAwareAlloc
+		}
+		if config.Flags.Plugin.AllocationHintAnnotation != nil && *config.Flags.Plugin.AllocationHintAnnotation != "" {
+			allocationHintAnnotation = *config.Flags.Plugin.AllocationHintAnnotation
+		}
+	}
+
+	nodeName := os.Getenv("NODE_NAME")
+	var kubeClient coreclientset.Interface
+	if topologyAwareAlloc {
+		if nodeName == "" {
+			klog.Warning("topology-aware-alloc enabled but NODE_NAME is empty; disabling topology-aware allocation")
+			topologyAwareAlloc = false
+		} else {
+			csconfig, err := o.kubeClientConfig.NewClientSetConfig()
+			if err != nil {
+				klog.Warningf("topology-aware-alloc enabled but unable to build kube client config: %v; disabling topology-aware allocation", err)
+				topologyAwareAlloc = false
+			} else {
+				kubeClient, err = coreclientset.NewForConfig(csconfig)
+				if err != nil {
+					klog.Warningf("topology-aware-alloc enabled but unable to create kube client: %v; disabling topology-aware allocation", err)
+					topologyAwareAlloc = false
+				}
+			}
+		}
+	}
+
 	// Get the set of plugins.
 	klog.Info("Retrieving plugins.")
-	plugins, err := GetPlugins(c.Context, infolib, nvmllib, devicelib, config)
+	plugins, err := GetPlugins(c.Context, infolib, nvmllib, devicelib, config, kubeClient, nodeName, topologyAwareAlloc, allocationHintAnnotation)
 	if err != nil {
 		return nil, false, fmt.Errorf("error getting plugins: %v", err)
 	}

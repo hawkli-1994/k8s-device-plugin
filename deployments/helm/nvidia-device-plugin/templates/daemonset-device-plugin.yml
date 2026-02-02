@@ -135,6 +135,10 @@ spec:
         name: nvidia-device-plugin-ctr
         command: ["nvidia-device-plugin"]
         env:
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: "spec.nodeName"
           - name: MPS_ROOT
             value: {{ .Values.mps.root }}
         {{- if typeIs "string" .Values.migStrategy }}
@@ -156,6 +160,14 @@ spec:
         {{- if typeIs "string" .Values.deviceIDStrategy }}
           - name: DEVICE_ID_STRATEGY
             value: {{ .Values.deviceIDStrategy }}
+        {{- end }}
+        {{- if typeIs "bool" .Values.topologyAwareAlloc }}
+          - name: TOPOLOGY_AWARE_ALLOC
+            value: {{ .Values.topologyAwareAlloc | quote }}
+        {{- end }}
+        {{- if typeIs "string" .Values.allocationHintAnnotation }}
+          - name: ALLOCATION_HINT_ANNOTATION
+            value: {{ .Values.allocationHintAnnotation }}
         {{- end }}
         {{- if typeIs "string" .Values.nvidiaDriverRoot }}
           - name: NVIDIA_DRIVER_ROOT

@@ -9,7 +9,7 @@ metadata:
     {{- include "nvidia-device-plugin.labels" . | nindent 4 }}
 rules:
   - apiGroups: [""]
-    resources: ["nodes"]
+    resources: ["nodes", "pods"]
     verbs: ["get", "list", "watch"]
   {{- if .Values.gfd.enabled }}
   - apiGroups: ["nfd.k8s-sigs.io"]

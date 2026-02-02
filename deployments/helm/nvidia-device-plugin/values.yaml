@@ -32,6 +32,8 @@ migStrategy: null
 failOnInitError: null
 deviceListStrategy: null
 deviceIDStrategy: null
+topologyAwareAlloc: null
+allocationHintAnnotation: null
 resourceNamePrefix: null
 nvidiaDriverRoot: null
 gdrcopyEnabled: null

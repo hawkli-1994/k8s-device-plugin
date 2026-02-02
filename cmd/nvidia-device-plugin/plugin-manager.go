@@ -23,6 +23,7 @@ import (
 	"github.com/NVIDIA/go-nvlib/pkg/nvlib/device"
 	"github.com/NVIDIA/go-nvlib/pkg/nvlib/info"
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
+	coreclientset "k8s.io/client-go/kubernetes"
 
 	spec "github.com/NVIDIA/k8s-device-plugin/api/config/v1"
 	"github.com/NVIDIA/k8s-device-plugin/internal/cdi"
@@ -31,7 +32,7 @@ import (
 )
 
 // GetPlugins returns a set of plugins for the specified configuration.
-func GetPlugins(ctx context.Context, infolib info.Interface, nvmllib nvml.Interface, devicelib device.Interface, config *spec.Config) ([]plugin.Interface, error) {
+func GetPlugins(ctx context.Context, infolib info.Interface, nvmllib nvml.Interface, devicelib device.Interface, config *spec.Config, kubeClient coreclientset.Interface, nodeName string, topologyAwareAlloc bool, allocationHintAnnotation string) ([]plugin.Interface, error) {
 	// TODO: We could consider passing this as an argument since it should already be used to construct nvmllib.
 	driverRoot := root(*config.Flags.Plugin.ContainerDriverRoot)
 
@@ -69,6 +70,10 @@ func GetPlugins(ctx context.Context, infolib info.Interface, nvmllib nvml.Interf
 		plugin.WithDeviceListStrategies(deviceListStrategies),
 		plugin.WithFailOnInitError(*config.Flags.FailOnInitError),
 		plugin.WithImexChannels(imexChannels),
+		plugin.WithKubeClient(kubeClient),
+		plugin.WithNodeName(nodeName),
+		plugin.WithTopologyAwareAlloc(topologyAwareAlloc),
+		plugin.WithAllocationHintAnnotation(allocationHintAnnotation),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create plugins: %w", err)

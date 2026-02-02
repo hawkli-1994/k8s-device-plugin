@@ -23,6 +23,7 @@ import (
 	"github.com/NVIDIA/go-nvlib/pkg/nvlib/device"
 	"github.com/NVIDIA/go-nvlib/pkg/nvlib/info"
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
+	coreclientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 
 	spec "github.com/NVIDIA/k8s-device-plugin/api/config/v1"
@@ -44,6 +45,11 @@ type options struct {
 	deviceListStrategies spec.DeviceListStrategies
 
 	imexChannels imex.Channels
+
+	kubeClient               coreclientset.Interface
+	nodeName                 string
+	topologyAwareAlloc       bool
+	allocationHintAnnotation string
 }
 
 // New a new set of plugins with the supplied options.
